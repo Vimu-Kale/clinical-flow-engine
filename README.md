@@ -8,6 +8,8 @@
 > ⚠️ **Not a medical device.** This is a reference implementation built on synthetic data. It contains no PHI, connects to no live EHR, and makes no clinical decision support claims.
 
 ---
+<img width="1710" height="949" alt="image" src="https://github.com/user-attachments/assets/e6834169-6cc9-4bc4-bd71-f74ceb47a24b" />
+
 
 ## The problem
 
