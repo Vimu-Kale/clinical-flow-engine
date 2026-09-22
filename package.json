@@ -1,0 +1,37 @@
+{
+  "name": "clinical-flow-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Author, version, simulate and execute healthcare care pathways as declarative data.",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "dev": "npm run dev --workspace @clinical-flow/studio",
+    "build": "npm run build --workspace @clinical-flow/studio",
+    "preview": "npm run preview --workspace @clinical-flow/studio",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage",
+    "validate:pathways": "tsx scripts/validate-pathways.ts",
+    "verify": "npm run typecheck && npm run validate:pathways && npm run test",
+    "docs:functions": "tsx scripts/generate-function-docs.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@vitest/coverage-v8": "^2.1.8",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "overrides": {
+    "vite": "^6.0.5"
+  }
+}

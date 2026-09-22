@@ -1,0 +1,15 @@
+{
+  "name": "@clinical-flow/workflow-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Deterministic, pausable interpreter for care pathways, with an append-only audit log.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@clinical-flow/expression": "*",
+    "@clinical-flow/fhir-lite": "*",
+    "@clinical-flow/workflow-core": "*"
+  }
+}

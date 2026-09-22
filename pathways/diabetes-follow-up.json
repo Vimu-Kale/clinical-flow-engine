@@ -1,0 +1,213 @@
+{
+  "id": "diabetes-follow-up",
+  "name": "Type 2 Diabetes HbA1c Follow-Up",
+  "version": "1.0.0",
+  "description": "Monthly population sweep that finds diabetic patients whose HbA1c is overdue or out of target, orders the test, chases the result on a timer, and routes uncontrolled patients through a renal safety check before therapy is intensified.",
+  "specialty": "Endocrinology",
+  "clinicalOwner": "Chronic Care Clinical Lead",
+  "tags": ["diabetes", "population-health", "chronic-care"],
+  "inputs": [],
+  "nodes": [
+    {
+      "id": "trigger",
+      "kind": "trigger",
+      "label": "Monthly population review",
+      "position": { "x": 40, "y": 320 },
+      "config": {
+        "event": "population.monthly-review",
+        "filter": "age(patient.birthDate) >= 18"
+      }
+    },
+    {
+      "id": "read-diabetes",
+      "kind": "clinical-data",
+      "label": "Has type 2 diabetes?",
+      "position": { "x": 300, "y": 320 },
+      "config": {
+        "resource": "Condition",
+        "filter": { "code": "E11.9", "clinicalStatus": "active" },
+        "select": "exists",
+        "assignTo": "hasDiabetes"
+      }
+    },
+    {
+      "id": "in-cohort",
+      "kind": "decision",
+      "label": "In cohort?",
+      "position": { "x": 560, "y": 320 },
+      "config": {
+        "branches": [
+          { "id": "yes", "label": "Diabetic", "when": "hasDiabetes == true" },
+          { "id": "no", "label": "Not in cohort", "when": "true" }
+        ],
+        "defaultBranchId": "no"
+      }
+    },
+    {
+      "id": "end-not-in-cohort",
+      "kind": "terminal",
+      "label": "Not applicable",
+      "position": { "x": 560, "y": 120 },
+      "config": { "outcome": "cancelled", "reason": "Patient is not in the type 2 diabetes cohort." }
+    },
+    {
+      "id": "read-a1c",
+      "kind": "clinical-data",
+      "label": "Most recent HbA1c",
+      "position": { "x": 840, "y": 320 },
+      "config": {
+        "resource": "Observation",
+        "filter": { "code": "4548-4" },
+        "select": "latest",
+        "assignTo": "lastA1c"
+      }
+    },
+    {
+      "id": "a1c-status",
+      "kind": "decision",
+      "label": "HbA1c status",
+      "description": "Branch order matters: the never-tested case is checked first so later branches can safely read the result.",
+      "position": { "x": 1120, "y": 320 },
+      "config": {
+        "branches": [
+          { "id": "never-tested", "label": "Never tested", "when": "!exists(lastA1c)" },
+          { "id": "overdue", "label": "Overdue (>180 days)", "when": "daysSince(lastA1c.effectiveDateTime) > 180" },
+          { "id": "uncontrolled", "label": "Uncontrolled (>=8%)", "when": "lastA1c.valueQuantity.value >= 8" },
+          { "id": "at-target", "label": "At target", "when": "true" }
+        ],
+        "defaultBranchId": "at-target"
+      }
+    },
+    {
+      "id": "order-a1c",
+      "kind": "automation",
+      "label": "Order HbA1c",
+      "position": { "x": 1120, "y": 560 },
+      "config": {
+        "action": "order.lab",
+        "params": { "code": "4548-4", "priority": "routine" },
+        "assignTo": "a1cOrder"
+      }
+    },
+    {
+      "id": "outreach-call",
+      "kind": "task",
+      "label": "Patient outreach",
+      "position": { "x": 1120, "y": 700 },
+      "config": {
+        "assigneeRole": "Care Coordinator",
+        "instructions": "Call the patient to book the blood draw and confirm they can attend.",
+        "slaMinutes": 2880,
+        "assignTo": "outreachOutcome"
+      }
+    },
+    {
+      "id": "await-result",
+      "kind": "timer",
+      "label": "Wait 7 days for result",
+      "position": { "x": 840, "y": 700 },
+      "config": { "durationMinutes": 10080 }
+    },
+    {
+      "id": "read-egfr",
+      "kind": "clinical-data",
+      "label": "Latest eGFR",
+      "position": { "x": 1400, "y": 180 },
+      "config": {
+        "resource": "Observation",
+        "filter": { "code": "33914-3" },
+        "select": "value",
+        "assignTo": "egfr"
+      }
+    },
+    {
+      "id": "renal-check",
+      "kind": "decision",
+      "label": "Renal function",
+      "position": { "x": 1660, "y": 180 },
+      "config": {
+        "branches": [
+          { "id": "reduced", "label": "eGFR below 60", "when": "coalesce(egfr, 90) < 60" },
+          { "id": "adequate", "label": "eGFR adequate", "when": "true" }
+        ],
+        "defaultBranchId": "adequate"
+      }
+    },
+    {
+      "id": "notify-nephrology",
+      "kind": "escalation",
+      "label": "Flag to nephrology",
+      "position": { "x": 1920, "y": 60 },
+      "config": {
+        "toRole": "Nephrology",
+        "severity": "medium",
+        "reason": "Uncontrolled diabetes with reduced renal function; metformin dosing needs review before escalation."
+      }
+    },
+    {
+      "id": "medication-review",
+      "kind": "task",
+      "label": "Pharmacist medication review",
+      "position": { "x": 2180, "y": 60 },
+      "config": {
+        "assigneeRole": "Clinical Pharmacist",
+        "instructions": "Review renal dosing of all glucose-lowering agents and propose an adjusted regimen.",
+        "slaMinutes": 4320,
+        "assignTo": "medicationPlan"
+      }
+    },
+    {
+      "id": "end-renal-reviewed",
+      "kind": "terminal",
+      "label": "Renal-adjusted plan",
+      "position": { "x": 2440, "y": 60 },
+      "config": { "outcome": "completed", "reason": "Therapy intensified with renal dosing applied." }
+    },
+    {
+      "id": "intensify-therapy",
+      "kind": "task",
+      "label": "Intensify therapy",
+      "position": { "x": 1920, "y": 300 },
+      "config": {
+        "assigneeRole": "Endocrinologist",
+        "instructions": "Review the regimen and step up therapy in line with the local glycaemic protocol.",
+        "slaMinutes": 4320,
+        "assignTo": "therapyPlan"
+      }
+    },
+    {
+      "id": "end-intensified",
+      "kind": "terminal",
+      "label": "Therapy intensified",
+      "position": { "x": 2180, "y": 300 },
+      "config": { "outcome": "completed", "reason": "Regimen stepped up for an uncontrolled patient." }
+    },
+    {
+      "id": "end-at-target",
+      "kind": "terminal",
+      "label": "At target",
+      "position": { "x": 1400, "y": 440 },
+      "config": { "outcome": "completed", "reason": "HbA1c is current and within target." }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "trigger", "target": "read-diabetes" },
+    { "id": "e2", "source": "read-diabetes", "target": "in-cohort" },
+    { "id": "e3", "source": "in-cohort", "target": "read-a1c", "branchId": "yes", "label": "Diabetic" },
+    { "id": "e4", "source": "in-cohort", "target": "end-not-in-cohort", "branchId": "no", "label": "Not in cohort" },
+    { "id": "e5", "source": "read-a1c", "target": "a1c-status" },
+    { "id": "e6", "source": "a1c-status", "target": "order-a1c", "branchId": "never-tested", "label": "Never tested" },
+    { "id": "e7", "source": "a1c-status", "target": "order-a1c", "branchId": "overdue", "label": "Overdue" },
+    { "id": "e8", "source": "order-a1c", "target": "outreach-call" },
+    { "id": "e9", "source": "outreach-call", "target": "await-result" },
+    { "id": "e10", "source": "await-result", "target": "read-a1c" },
+    { "id": "e11", "source": "a1c-status", "target": "read-egfr", "branchId": "uncontrolled", "label": "Uncontrolled" },
+    { "id": "e12", "source": "read-egfr", "target": "renal-check" },
+    { "id": "e13", "source": "renal-check", "target": "notify-nephrology", "branchId": "reduced", "label": "eGFR < 60" },
+    { "id": "e14", "source": "notify-nephrology", "target": "medication-review" },
+    { "id": "e15", "source": "medication-review", "target": "end-renal-reviewed" },
+    { "id": "e16", "source": "renal-check", "target": "intensify-therapy", "branchId": "adequate", "label": "eGFR OK" },
+    { "id": "e17", "source": "intensify-therapy", "target": "end-intensified" },
+    { "id": "e18", "source": "a1c-status", "target": "end-at-target", "branchId": "at-target", "label": "At target" }
+  ]
+}

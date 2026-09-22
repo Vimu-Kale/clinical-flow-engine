@@ -1,0 +1,172 @@
+{
+  "id": "prior-authorization",
+  "name": "Advanced Imaging Prior Authorization",
+  "version": "2.1.0",
+  "description": "Checks whether a plan requires prior authorization for a requested study, submits it, waits on the payer, and routes denials to a physician advisor for peer-to-peer review. Requests for more information loop back through resubmission.",
+  "specialty": "Revenue Cycle",
+  "clinicalOwner": "Utilization Management Lead",
+  "tags": ["prior-auth", "payer", "revenue-cycle"],
+  "inputs": ["requestedProcedure"],
+  "nodes": [
+    {
+      "id": "trigger",
+      "kind": "trigger",
+      "label": "Imaging order placed",
+      "description": "The requested study arrives as a declared workflow input rather than being read from the record.",
+      "position": { "x": 40, "y": 300 },
+      "config": { "event": "order.placed" }
+    },
+    {
+      "id": "read-coverage",
+      "kind": "clinical-data",
+      "label": "Active coverage",
+      "position": { "x": 300, "y": 300 },
+      "config": { "resource": "Coverage", "select": "latest", "assignTo": "coverage" }
+    },
+    {
+      "id": "auth-required",
+      "kind": "decision",
+      "label": "Authorization required?",
+      "position": { "x": 560, "y": 300 },
+      "config": {
+        "branches": [
+          { "id": "not-required", "label": "Not required", "when": "!exists(coverage) || coverage.priorAuthRequired == false" },
+          { "id": "required", "label": "Required", "when": "true" }
+        ],
+        "defaultBranchId": "required"
+      }
+    },
+    {
+      "id": "end-not-required",
+      "kind": "terminal",
+      "label": "No authorization needed",
+      "position": { "x": 560, "y": 100 },
+      "config": { "outcome": "completed", "reason": "Plan does not require prior authorization for this study." }
+    },
+    {
+      "id": "submit-request",
+      "kind": "automation",
+      "label": "Submit to payer",
+      "position": { "x": 840, "y": 300 },
+      "config": {
+        "action": "payer.submit-prior-auth",
+        "params": {
+          "procedure": "=requestedProcedure",
+          "payer": "=coverage.payer",
+          "plan": "=coverage.plan",
+          "memberName": "=patient.name"
+        },
+        "assignTo": "submission"
+      }
+    },
+    {
+      "id": "await-payer",
+      "kind": "timer",
+      "label": "Await payer (48h)",
+      "position": { "x": 1100, "y": 300 },
+      "config": { "durationMinutes": 2880 }
+    },
+    {
+      "id": "record-determination",
+      "kind": "task",
+      "label": "Record determination",
+      "position": { "x": 1360, "y": 300 },
+      "config": {
+        "assigneeRole": "Prior Authorization Specialist",
+        "instructions": "Record the payer's determination as approved, denied, or more-info.",
+        "slaMinutes": 480,
+        "assignTo": "determination"
+      }
+    },
+    {
+      "id": "determination-outcome",
+      "kind": "decision",
+      "label": "Payer determination",
+      "position": { "x": 1620, "y": 300 },
+      "config": {
+        "branches": [
+          { "id": "approved", "label": "Approved", "when": "determination.outcome == \"approved\"" },
+          { "id": "denied", "label": "Denied", "when": "determination.outcome == \"denied\"" },
+          { "id": "more-info", "label": "More information needed", "when": "true" }
+        ],
+        "defaultBranchId": "more-info"
+      }
+    },
+    {
+      "id": "schedule-study",
+      "kind": "automation",
+      "label": "Schedule study",
+      "position": { "x": 1900, "y": 120 },
+      "config": {
+        "action": "schedule.procedure",
+        "params": { "procedure": "=requestedProcedure", "withinDays": 14 },
+        "assignTo": "booking"
+      }
+    },
+    {
+      "id": "end-approved",
+      "kind": "terminal",
+      "label": "Approved and booked",
+      "position": { "x": 2160, "y": 120 },
+      "config": { "outcome": "completed", "reason": "Authorization granted and the study is scheduled." }
+    },
+    {
+      "id": "escalate-advisor",
+      "kind": "escalation",
+      "label": "Physician advisor",
+      "position": { "x": 1900, "y": 320 },
+      "config": {
+        "toRole": "Physician Advisor",
+        "severity": "high",
+        "reason": "Payer denied the requested study; a peer-to-peer review is needed within the appeal window."
+      }
+    },
+    {
+      "id": "peer-to-peer",
+      "kind": "task",
+      "label": "Peer-to-peer review",
+      "position": { "x": 2160, "y": 320 },
+      "config": {
+        "assigneeRole": "Physician Advisor",
+        "instructions": "Hold the peer-to-peer call with the payer's medical director and document the outcome.",
+        "slaMinutes": 2880,
+        "assignTo": "appealOutcome"
+      }
+    },
+    {
+      "id": "end-denied",
+      "kind": "terminal",
+      "label": "Denial appealed",
+      "position": { "x": 2420, "y": 320 },
+      "config": { "outcome": "escalated", "reason": "Denial routed through peer-to-peer appeal." }
+    },
+    {
+      "id": "gather-documentation",
+      "kind": "task",
+      "label": "Gather documentation",
+      "position": { "x": 1620, "y": 540 },
+      "config": {
+        "assigneeRole": "Prior Authorization Specialist",
+        "instructions": "Collect the conservative-therapy notes and imaging history the payer asked for.",
+        "slaMinutes": 1440,
+        "assignTo": "additionalDocumentation"
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "trigger", "target": "read-coverage" },
+    { "id": "e2", "source": "read-coverage", "target": "auth-required" },
+    { "id": "e3", "source": "auth-required", "target": "end-not-required", "branchId": "not-required", "label": "Not required" },
+    { "id": "e4", "source": "auth-required", "target": "submit-request", "branchId": "required", "label": "Required" },
+    { "id": "e5", "source": "submit-request", "target": "await-payer" },
+    { "id": "e6", "source": "await-payer", "target": "record-determination" },
+    { "id": "e7", "source": "record-determination", "target": "determination-outcome" },
+    { "id": "e8", "source": "determination-outcome", "target": "schedule-study", "branchId": "approved", "label": "Approved" },
+    { "id": "e9", "source": "schedule-study", "target": "end-approved" },
+    { "id": "e10", "source": "determination-outcome", "target": "escalate-advisor", "branchId": "denied", "label": "Denied" },
+    { "id": "e11", "source": "escalate-advisor", "target": "peer-to-peer" },
+    { "id": "e12", "source": "peer-to-peer", "target": "end-denied" },
+    { "id": "e13", "source": "determination-outcome", "target": "gather-documentation", "branchId": "more-info", "label": "More info" },
+    { "id": "e14", "source": "gather-documentation", "target": "submit-request" }
+  ]
+}

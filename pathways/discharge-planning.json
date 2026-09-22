@@ -1,0 +1,215 @@
+{
+  "id": "discharge-planning",
+  "name": "Inpatient Discharge and Readmission Risk",
+  "version": "1.4.0",
+  "description": "Stratifies readmission risk at the point a discharge is ordered using polypharmacy, prior admissions and renal function, then assigns the follow-up intensity that matches the tier.",
+  "specialty": "Care Management",
+  "clinicalOwner": "Director of Care Transitions",
+  "tags": ["discharge", "readmission", "care-transitions"],
+  "inputs": [],
+  "nodes": [
+    {
+      "id": "trigger",
+      "kind": "trigger",
+      "label": "Discharge ordered",
+      "position": { "x": 40, "y": 400 },
+      "config": { "event": "encounter.discharge-ordered" }
+    },
+    {
+      "id": "read-admission",
+      "kind": "clinical-data",
+      "label": "Current admission",
+      "position": { "x": 300, "y": 400 },
+      "config": {
+        "resource": "Encounter",
+        "filter": { "class": "inpatient", "status": "in-progress" },
+        "select": "latest",
+        "assignTo": "admission"
+      }
+    },
+    {
+      "id": "read-medications",
+      "kind": "clinical-data",
+      "label": "Active medication count",
+      "position": { "x": 560, "y": 400 },
+      "config": {
+        "resource": "MedicationRequest",
+        "filter": { "status": "active" },
+        "select": "count",
+        "assignTo": "medicationCount"
+      }
+    },
+    {
+      "id": "read-admission-history",
+      "kind": "clinical-data",
+      "label": "Inpatient admissions on record",
+      "position": { "x": 820, "y": 400 },
+      "config": {
+        "resource": "Encounter",
+        "filter": { "class": "inpatient" },
+        "select": "count",
+        "assignTo": "admissionCount"
+      }
+    },
+    {
+      "id": "read-egfr",
+      "kind": "clinical-data",
+      "label": "Latest eGFR",
+      "position": { "x": 1080, "y": 400 },
+      "config": {
+        "resource": "Observation",
+        "filter": { "code": "33914-3" },
+        "select": "value",
+        "assignTo": "egfr"
+      }
+    },
+    {
+      "id": "risk-tier",
+      "kind": "decision",
+      "label": "Readmission risk",
+      "position": { "x": 1340, "y": 400 },
+      "config": {
+        "branches": [
+          {
+            "id": "high",
+            "label": "High",
+            "when": "medicationCount >= 5 || admissionCount >= 2 || coalesce(egfr, 90) < 45"
+          },
+          {
+            "id": "moderate",
+            "label": "Moderate",
+            "when": "medicationCount >= 3 || daysSince(admission.start) >= 4"
+          },
+          { "id": "low", "label": "Low", "when": "true" }
+        ],
+        "defaultBranchId": "low"
+      }
+    },
+    {
+      "id": "pharmacist-reconciliation",
+      "kind": "task",
+      "label": "Medication reconciliation",
+      "position": { "x": 1620, "y": 120 },
+      "config": {
+        "assigneeRole": "Clinical Pharmacist",
+        "instructions": "Reconcile the discharge list against the pre-admission list and counsel the patient at the bedside.",
+        "slaMinutes": 720,
+        "assignTo": "reconciliation"
+      }
+    },
+    {
+      "id": "schedule-followup-high",
+      "kind": "automation",
+      "label": "Follow-up within 7 days",
+      "position": { "x": 1880, "y": 120 },
+      "config": {
+        "action": "schedule.followup",
+        "params": { "withinDays": 7, "modality": "in-person" },
+        "assignTo": "followUpBooking"
+      }
+    },
+    {
+      "id": "home-health-referral",
+      "kind": "task",
+      "label": "Home health referral",
+      "position": { "x": 2140, "y": 120 },
+      "config": {
+        "assigneeRole": "Care Manager",
+        "instructions": "Refer to home health for nursing visits and confirm the agency has accepted before discharge.",
+        "slaMinutes": 1440,
+        "assignTo": "homeHealthReferral"
+      }
+    },
+    {
+      "id": "post-discharge-timer",
+      "kind": "timer",
+      "label": "Wait 48 hours",
+      "position": { "x": 2400, "y": 120 },
+      "config": { "durationMinutes": 2880 }
+    },
+    {
+      "id": "post-discharge-call",
+      "kind": "automation",
+      "label": "Post-discharge call",
+      "position": { "x": 2660, "y": 120 },
+      "config": {
+        "action": "outreach.call",
+        "params": { "script": "transition-of-care", "patientName": "=patient.name" },
+        "assignTo": "postDischargeCall"
+      }
+    },
+    {
+      "id": "end-high",
+      "kind": "terminal",
+      "label": "High-risk bundle complete",
+      "position": { "x": 2920, "y": 120 },
+      "config": { "outcome": "completed", "reason": "Full transition-of-care bundle delivered." }
+    },
+    {
+      "id": "schedule-followup-moderate",
+      "kind": "automation",
+      "label": "Follow-up within 14 days",
+      "position": { "x": 1620, "y": 420 },
+      "config": {
+        "action": "schedule.followup",
+        "params": { "withinDays": 14, "modality": "virtual" },
+        "assignTo": "followUpBooking"
+      }
+    },
+    {
+      "id": "nurse-education",
+      "kind": "task",
+      "label": "Discharge education",
+      "position": { "x": 1880, "y": 420 },
+      "config": {
+        "assigneeRole": "Ward Nurse",
+        "instructions": "Deliver teach-back on warning signs and confirm the patient can describe when to seek help.",
+        "slaMinutes": 480,
+        "assignTo": "educationOutcome"
+      }
+    },
+    {
+      "id": "end-moderate",
+      "kind": "terminal",
+      "label": "Moderate-risk complete",
+      "position": { "x": 2140, "y": 420 },
+      "config": { "outcome": "completed", "reason": "Virtual follow-up booked with teach-back delivered." }
+    },
+    {
+      "id": "schedule-followup-low",
+      "kind": "automation",
+      "label": "Follow-up within 30 days",
+      "position": { "x": 1620, "y": 640 },
+      "config": {
+        "action": "schedule.followup",
+        "params": { "withinDays": 30, "modality": "virtual" },
+        "assignTo": "followUpBooking"
+      }
+    },
+    {
+      "id": "end-low",
+      "kind": "terminal",
+      "label": "Routine discharge",
+      "position": { "x": 1880, "y": 640 },
+      "config": { "outcome": "completed", "reason": "Routine follow-up booked; no additional services required." }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "trigger", "target": "read-admission" },
+    { "id": "e2", "source": "read-admission", "target": "read-medications" },
+    { "id": "e3", "source": "read-medications", "target": "read-admission-history" },
+    { "id": "e4", "source": "read-admission-history", "target": "read-egfr" },
+    { "id": "e5", "source": "read-egfr", "target": "risk-tier" },
+    { "id": "e6", "source": "risk-tier", "target": "pharmacist-reconciliation", "branchId": "high", "label": "High" },
+    { "id": "e7", "source": "pharmacist-reconciliation", "target": "schedule-followup-high" },
+    { "id": "e8", "source": "schedule-followup-high", "target": "home-health-referral" },
+    { "id": "e9", "source": "home-health-referral", "target": "post-discharge-timer" },
+    { "id": "e10", "source": "post-discharge-timer", "target": "post-discharge-call" },
+    { "id": "e11", "source": "post-discharge-call", "target": "end-high" },
+    { "id": "e12", "source": "risk-tier", "target": "schedule-followup-moderate", "branchId": "moderate", "label": "Moderate" },
+    { "id": "e13", "source": "schedule-followup-moderate", "target": "nurse-education" },
+    { "id": "e14", "source": "nurse-education", "target": "end-moderate" },
+    { "id": "e15", "source": "risk-tier", "target": "schedule-followup-low", "branchId": "low", "label": "Low" },
+    { "id": "e16", "source": "schedule-followup-low", "target": "end-low" }
+  ]
+}

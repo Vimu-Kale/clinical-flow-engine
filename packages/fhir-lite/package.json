@@ -1,0 +1,10 @@
+{
+  "name": "@clinical-flow/fhir-lite",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "FHIR-shaped synthetic patient records and an in-memory clinical data store. Contains no PHI.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": { ".": "./src/index.ts" }
+}

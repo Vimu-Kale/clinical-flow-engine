@@ -1,0 +1,235 @@
+{
+  "id": "sepsis-screening",
+  "name": "Adult Sepsis Screening and Escalation",
+  "version": "1.2.0",
+  "description": "Screens adult encounters against lactate and SIRS criteria, escalates septic shock to the rapid response team, and re-screens borderline patients on a timer instead of discharging them from the pathway.",
+  "specialty": "Emergency Medicine",
+  "clinicalOwner": "Director of Emergency Nursing",
+  "tags": ["sepsis", "screening", "escalation", "time-critical"],
+  "inputs": [],
+  "nodes": [
+    {
+      "id": "trigger",
+      "kind": "trigger",
+      "label": "Vitals recorded",
+      "description": "Runs whenever a new set of vitals is filed against an adult encounter.",
+      "position": { "x": 60, "y": 40 },
+      "config": {
+        "event": "encounter.vitals-recorded",
+        "filter": "age(patient.birthDate) >= 18"
+      }
+    },
+    {
+      "id": "read-lactate",
+      "kind": "clinical-data",
+      "label": "Latest lactate",
+      "position": { "x": 60, "y": 170 },
+      "config": {
+        "resource": "Observation",
+        "filter": { "code": "2524-7" },
+        "select": "value",
+        "assignTo": "lactate"
+      }
+    },
+    {
+      "id": "read-temperature",
+      "kind": "clinical-data",
+      "label": "Latest temperature",
+      "position": { "x": 60, "y": 290 },
+      "config": {
+        "resource": "Observation",
+        "filter": { "code": "8310-5" },
+        "select": "value",
+        "assignTo": "temperature"
+      }
+    },
+    {
+      "id": "read-heart-rate",
+      "kind": "clinical-data",
+      "label": "Latest heart rate",
+      "position": { "x": 60, "y": 410 },
+      "config": {
+        "resource": "Observation",
+        "filter": { "code": "8867-4" },
+        "select": "value",
+        "assignTo": "heartRate"
+      }
+    },
+    {
+      "id": "read-systolic",
+      "kind": "clinical-data",
+      "label": "Latest systolic BP",
+      "position": { "x": 60, "y": 530 },
+      "config": {
+        "resource": "Observation",
+        "filter": { "code": "8480-6" },
+        "select": "value",
+        "assignTo": "systolicBp"
+      }
+    },
+    {
+      "id": "read-respiratory",
+      "kind": "clinical-data",
+      "label": "Latest respiratory rate",
+      "position": { "x": 60, "y": 650 },
+      "config": {
+        "resource": "Observation",
+        "filter": { "code": "9279-1" },
+        "select": "value",
+        "assignTo": "respiratoryRate"
+      }
+    },
+    {
+      "id": "read-white-cells",
+      "kind": "clinical-data",
+      "label": "Latest white cell count",
+      "position": { "x": 60, "y": 770 },
+      "config": {
+        "resource": "Observation",
+        "filter": { "code": "6690-2" },
+        "select": "value",
+        "assignTo": "whiteCellCount"
+      }
+    },
+    {
+      "id": "severity",
+      "kind": "decision",
+      "label": "Sepsis severity",
+      "description": "Branches are evaluated top to bottom; the first match wins.",
+      "position": { "x": 380, "y": 760 },
+      "config": {
+        "branches": [
+          {
+            "id": "septic-shock",
+            "label": "Septic shock",
+            "when": "coalesce(lactate, 0) >= 4 && coalesce(systolicBp, 999) < 90"
+          },
+          {
+            "id": "sepsis-likely",
+            "label": "Sepsis likely",
+            "when": "coalesce(lactate, 0) >= 2 && (coalesce(temperature, 0) > 38 || coalesce(heartRate, 0) > 90 || coalesce(respiratoryRate, 0) > 20 || coalesce(whiteCellCount, 0) > 12)"
+          },
+          {
+            "id": "monitor",
+            "label": "Borderline, re-screen",
+            "when": "coalesce(temperature, 0) > 38 || coalesce(heartRate, 0) > 90 || coalesce(respiratoryRate, 0) > 20"
+          },
+          {
+            "id": "clear",
+            "label": "No sepsis indicators",
+            "when": "true"
+          }
+        ],
+        "defaultBranchId": "clear"
+      }
+    },
+    {
+      "id": "escalate-rrt",
+      "kind": "escalation",
+      "label": "Page rapid response",
+      "position": { "x": 700, "y": 430 },
+      "config": {
+        "toRole": "Rapid Response Team",
+        "severity": "critical",
+        "reason": "Lactate at or above 4 mmol/L with systolic blood pressure below 90 mmHg."
+      }
+    },
+    {
+      "id": "order-bundle",
+      "kind": "automation",
+      "label": "Order sepsis bundle",
+      "position": { "x": 980, "y": 430 },
+      "config": {
+        "action": "order.sepsis-bundle",
+        "params": {
+          "bundle": "hour-1",
+          "note": "=patient.name + ' met septic shock criteria at lactate ' + lactate"
+        },
+        "assignTo": "bundleOrder"
+      }
+    },
+    {
+      "id": "physician-review",
+      "kind": "task",
+      "label": "Attending review",
+      "position": { "x": 1260, "y": 430 },
+      "config": {
+        "assigneeRole": "Attending Physician",
+        "instructions": "Review the hour-1 bundle, confirm source control and document the sepsis diagnosis.",
+        "slaMinutes": 30,
+        "assignTo": "physicianReview"
+      }
+    },
+    {
+      "id": "end-escalated",
+      "kind": "terminal",
+      "label": "Escalated",
+      "position": { "x": 1540, "y": 430 },
+      "config": { "outcome": "escalated", "reason": "Septic shock pathway handed to the rapid response team." }
+    },
+    {
+      "id": "repeat-lactate",
+      "kind": "automation",
+      "label": "Order repeat lactate",
+      "position": { "x": 700, "y": 640 },
+      "config": {
+        "action": "order.lab",
+        "params": { "code": "2524-7", "priority": "urgent" },
+        "assignTo": "repeatLactateOrder"
+      }
+    },
+    {
+      "id": "nurse-reassess",
+      "kind": "task",
+      "label": "Nurse reassessment",
+      "position": { "x": 980, "y": 640 },
+      "config": {
+        "assigneeRole": "Charge Nurse",
+        "instructions": "Reassess perfusion and mental status, and chart a full sepsis screen.",
+        "slaMinutes": 60,
+        "assignTo": "nurseReassessment"
+      }
+    },
+    {
+      "id": "end-treated",
+      "kind": "terminal",
+      "label": "Managed on ward",
+      "position": { "x": 1260, "y": 640 },
+      "config": { "outcome": "completed", "reason": "Sepsis suspected and managed without escalation." }
+    },
+    {
+      "id": "rescreen-timer",
+      "kind": "timer",
+      "label": "Re-screen in 2 hours",
+      "description": "The timer is what makes this loop safe: the validator rejects any cycle without one.",
+      "position": { "x": 700, "y": 860 },
+      "config": { "durationMinutes": 120 }
+    },
+    {
+      "id": "end-clear",
+      "kind": "terminal",
+      "label": "Screened negative",
+      "position": { "x": 700, "y": 1000 },
+      "config": { "outcome": "completed", "reason": "No sepsis indicators present." }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "trigger", "target": "read-lactate" },
+    { "id": "e2", "source": "read-lactate", "target": "read-temperature" },
+    { "id": "e3", "source": "read-temperature", "target": "read-heart-rate" },
+    { "id": "e4", "source": "read-heart-rate", "target": "read-systolic" },
+    { "id": "e5", "source": "read-systolic", "target": "read-respiratory" },
+    { "id": "e6", "source": "read-respiratory", "target": "read-white-cells" },
+    { "id": "e7", "source": "read-white-cells", "target": "severity" },
+    { "id": "e8", "source": "severity", "target": "escalate-rrt", "branchId": "septic-shock", "label": "Septic shock" },
+    { "id": "e9", "source": "escalate-rrt", "target": "order-bundle" },
+    { "id": "e10", "source": "order-bundle", "target": "physician-review" },
+    { "id": "e11", "source": "physician-review", "target": "end-escalated" },
+    { "id": "e12", "source": "severity", "target": "repeat-lactate", "branchId": "sepsis-likely", "label": "Sepsis likely" },
+    { "id": "e13", "source": "repeat-lactate", "target": "nurse-reassess" },
+    { "id": "e14", "source": "nurse-reassess", "target": "end-treated" },
+    { "id": "e15", "source": "severity", "target": "rescreen-timer", "branchId": "monitor", "label": "Borderline" },
+    { "id": "e16", "source": "rescreen-timer", "target": "read-lactate" },
+    { "id": "e17", "source": "severity", "target": "end-clear", "branchId": "clear", "label": "Clear" }
+  ]
+}

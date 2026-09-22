@@ -1,0 +1,31 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`sepsis screening > escalates a patient in septic shock and records the full trail > septic-shock-audit-trail 1`] = `
+[
+  "1. instance.started -",
+  "2. node.entered trigger",
+  "3. node.entered read-lactate",
+  "4. data.assigned read-lactate",
+  "5. node.entered read-temperature",
+  "6. data.assigned read-temperature",
+  "7. node.entered read-heart-rate",
+  "8. data.assigned read-heart-rate",
+  "9. node.entered read-systolic",
+  "10. data.assigned read-systolic",
+  "11. node.entered read-respiratory",
+  "12. data.assigned read-respiratory",
+  "13. node.entered read-white-cells",
+  "14. data.assigned read-white-cells",
+  "15. node.entered severity",
+  "16. decision.evaluated severity",
+  "17. node.entered escalate-rrt",
+  "18. escalation.raised escalate-rrt",
+  "19. node.entered order-bundle",
+  "20. automation.invoked order-bundle",
+  "21. node.entered physician-review",
+  "22. task.assigned physician-review",
+  "23. task.completed physician-review",
+  "24. node.entered end-escalated",
+  "25. instance.completed end-escalated",
+]
+`;
